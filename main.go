@@ -1,18 +1,23 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"os"
+	"os/exec"
+	"strings"
 )
 
 var (
-	listen = flag.Bool("l", false, "Listen")
-	host   = flag.String("h", "localhost", "Host")
-	port   = flag.Int("p", 0, "Port")
+	listen  = flag.Bool("l", false, "Listen")
+	host    = flag.String("h", "localhost", "Host")
+	port    = flag.Int("p", 0, "Port")
+	command = flag.Bool("c", false, "Command server")
+	execute = flag.String("e", "", "Execute command")
 )
 
 func main() {
@@ -51,11 +56,45 @@ func startServer() {
 }
 
 func processClient(conn net.Conn) {
+	if *command {
+		err := launchCommand(conn)
+		if err != nil {
+			log.Println(err)
+			conn.Close()
+			return
+		}
+	}
 	_, err := io.Copy(os.Stdout, conn)
 	if err != nil {
 		log.Println(err)
 	}
 	conn.Close()
+}
+
+func launchCommand(conn net.Conn) error {
+	reader := bufio.NewReader(conn)
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return err
+	}
+	log.Printf("Command: %s\n", line)
+	cmd := exec.Command(strings.TrimSpace(line))
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return err
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return err
+	}
+	go io.Copy(stdin, conn)
+	go io.Copy(conn, stdout)
+	go io.Copy(conn, stderr)
+	return cmd.Run()
 }
 
 func startClient(addr string) {
@@ -64,6 +103,11 @@ func startClient(addr string) {
 		fmt.Printf("Can't connect to server: %s\n", err)
 		return
 	}
+	if len(*execute) > 0 {
+		cmd := fmt.Sprintf("%s\n", *execute)
+		conn.Write([]byte(cmd))
+	}
+	go io.Copy(os.Stdout, conn)
 	_, err = io.Copy(conn, os.Stdin)
 	if err != nil {
 		fmt.Printf("Connection error: %s\n", err)
