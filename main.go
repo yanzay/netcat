@@ -77,8 +77,9 @@ func launchCommand(conn net.Conn) error {
 	if err != nil {
 		return err
 	}
+	line = strings.TrimSpace(line)
 	log.Printf("Command: %s\n", line)
-	cmd := exec.Command(strings.TrimSpace(line))
+	cmd := exec.Command(line)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return err
